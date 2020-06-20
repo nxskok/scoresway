@@ -1,0 +1,71 @@
+## startup
+
+```{r}
+library(tidyverse)
+library(dplyr, warn.conflicts = F)
+library(rvest)
+library(lubridate)
+library(progress)
+library(janitor)
+library(conflicted)
+conflict_prefer("pluck", "purrr")
+conflict_prefer("filter", "dplyr") 
+source("functions.R")
+source("new_from_here.R")
+```
+
+## get games and m (can start from here)
+
+```{r}
+m <- read_rds("m.rds")
+games <- read_rds("rds/games.rds")
+nrow(games)
+```
+
+## (ii) game does exist, doesn't have a result, and might have a result now (I need the url and the timestamp)
+
+this doesn't seem to get the ones like 2:1
+
+```{r, might-have}
+base="http://www.soccerway.com"
+get_postponed <- "n"
+games %>% filter(!str_detect(score, " - ")) %>% # there might be none of these
+  filter(!str_detect(score, "Cancelled")) %>% 
+  filter(!str_detect(score, "Postponed") | get_postponed=="y")  -> g 
+m %>% inner_join(g, by="match") %>% 
+  select(league_url, match_url, date, match, time_stamp) %>% 
+  mutate(match_url=str_c(base, match_url)) %>% 
+  filter((now()-time_stamp)/dhours(1)>2) %>% # trying 2
+  # filter((now()-time_stamp)/ddays(1)<7) %>% # drop off after a week
+  select(-time_stamp) -> games_to_get
+nrow(games_to_get)
+pb <- progress_bar$new(format = "pr [:bar] :percent eta: :eta", total = nrow(games_to_get), width = 50)
+games <- new_combine(games_to_get, "new games")
+nrow(games)
+```
+
+
+
+
+
+
+## (iii) games scheduled for the next little while
+
+
+
+```{r, coming up}
+base="http://www.soccerway.com"
+games %>% filter(!str_detect(score, " - ")) %>% # there might be none of these
+  filter(!str_detect(score, "Cancelled")) %>% 
+  filter(!str_detect(score, "Postponed")) -> g
+m %>% inner_join(g, by="match") %>% 
+  select(match, country, comp_name, t1_name, t2_name, score, time_stamp) %>% 
+  arrange(time_stamp) %>% 
+  View("future games")
+  # filter((now()-time_stamp)/ddays(1)<7) %>% # drop off after a week
+  # select(-time_stamp) -> games_to_get
+# ne
+# View(games_to_get, "future games")
+# pb <- progress_bar$new(format = " progress [:bar] :percent eta: :eta", total = nrow(games_to_get))
+# games <- new_combine(games_to_get, "future games")
+```

@@ -1,0 +1,258 @@
+---
+title: "get league results from soccerway"
+output: html_notebook
+---
+
+## packages
+
+```{r}
+library(tidyverse)
+library(rvest)
+library(lubridate)
+library(glue)
+library(conflicted)
+conflict_prefer("pluck", "purrr")
+conflict_prefer("filter", "dplyr") 
+source("functions.R")
+```
+
+## get leagues and urls
+
+```{r}
+urls <- read_rds("~/Documents/odds/urls.rds")
+urls %>% mutate(url=str_c(url, "matches/")) %>% 
+  extract(url, into="id", regex="/r([0-9]+)/", remove=F, convert=T) -> urls
+urls
+urls %>% pull(id) -> the_leagues
+```
+
+```{r}
+# View(urls)
+```
+
+combine these with all_url:
+
+```{r}
+urls %>% select(url, comp=id) %>% 
+  mutate(url_short=str_replace(url, "^.*.soccerway.com", "")) %>% 
+  extract(url_short, into=c("country", "league"), regex="^/[^/]*/([^/]*)/([^/]*)", remove=F) %>% 
+  select(url=url_short, country, league, comp) -> odds_url
+odds_url
+old_urls <- read_rds("~/teaching/scoresway/all_url.rds") 
+old_urls
+old_urls %>% mutate(comp=as.integer(comp)) %>% 
+  bind_rows(odds_url) %>% 
+  distinct(comp, .keep_all = T) %>% 
+  mutate(key=str_c(country, league)) %>% 
+  mutate(key=str_replace_all(key, "-", "")) %>% 
+  mutate(league=abbreviate(key, minlength = 4, method="both")) %>% 
+  select(league, url, id=comp) -> all_leagues
+all_leagues %>% pull(id) -> the_leagues
+```
+
+
+
+## check for comps with upcoming games (that are prior to now with : or Postponed)
+
+get the actual games first
+
+
+get this from `games`: get games that are done and not too old (that ought to still be on matches)
+
+```{r}
+games <- read_rds("rds/games.rds")
+```
+
+
+games which are due (or, better, leagues with due games) finished in last day
+
+maybe get *all* comps and score their urls somewhere
+
+```{r, paged.print=F}
+games %>% 
+  filter(comp %in% the_leagues) %>% # think about removing this, but will need to have table of urls by league
+  filter(time_stamp+2.5*60*60<now()) %>% # games that have finished
+  filter(time_stamp>now()-1.25*24*60*60) %>% # go back one day (for further back, catch postponed games below); actually 1.25 days just in case
+  # filter(str_detect(score, ":") | str_detect(score, "Postponed")) -> to_get
+  filter(str_detect(score, ":")) -> to_get # don't get postponed ones here
+to_get %>% distinct(comp) %>% pull(comp) -> leagues_to_get
+to_get %>% distinct(comp) %>% 
+  left_join(all_leagues, by=c("comp"="id")) %>% 
+  arrange(url) %>% print(n=Inf)
+```
+
+catching up with postponed games
+
+```{r, paged.print=F}
+games %>% 
+  filter(comp %in% the_leagues) %>% 
+  filter(time_stamp<now()-1*24*60*60) %>% # at least a day ago
+  filter(time_stamp>now()-30*24*60*60) %>% # go back a month (30 days)
+  filter(str_detect(score, ":") | str_detect(score, "Postponed")) -> to_get
+to_get %>% distinct(comp) %>% pull(comp) -> leagues_to_get
+to_get %>% distinct(comp) %>% 
+  left_join(urls, by=c("comp"="id")) %>% 
+  arrange(league) %>% print(n=Inf)
+```
+
+
+
+or, a random selection from all leagues
+
+
+```{r, paged.print=F}
+urls %>% sample_frac(0.02) %>% 
+  pull(id) -> leagues_to_get
+urls %>% filter(id %in% leagues_to_get)
+```
+
+leagues that have no future games
+
+```{r, paged.print=F}
+games %>% filter(time_stamp>now()) %>% distinct(comp) -> future_comps
+urls %>% anti_join(future_comps, by=c("id"="comp")) %>% 
+  filter(str_detect(url, "20192020")) %>% 
+  filter(games>10) %>% 
+  pull(id) -> leagues_to_get
+leagues_to_get
+length(leagues_to_get)
+```
+
+
+or, particular league(s) 
+
+```{r}
+wants <- c(53131, 53437, 53161, 53165, 53677, 53874, 54637, 53081, 52784, 53987, 54796, 53502, 54950, 53474)
+# want %>% str_split(" ", simplify=T) %>% as.vector() -> wants
+all_leagues %>% filter(id %in% wants) %>% pull(id) -> leagues_to_get
+```
+
+
+### grab some
+
+```{r}
+leagues_to_get
+n_get <- 10
+leagues_to_get <- sample(leagues_to_get, n_get)
+# leagues_to_get
+```
+
+
+
+
+## get all game info for these leagues
+
+to skip
+
+```{r}
+skip=c()
+leagues_to_get <- leagues_to_get[!(leagues_to_get %in% skip)]
+leagues_to_get <- leagues_to_get[leagues_to_get>50000]
+```
+
+
+occasionally there is value in getting them all (if there were no games before but now there are some)
+
+here is get
+
+```{r}
+leagues_to_get
+length(leagues_to_get)
+league_url_to_game_info_possibly <- possibly(league_url_to_game_info, otherwise=list())
+pb <- progress_estimated(length(leagues_to_get)) # old, use pb <- progress_bar$new(format = " progress [:bar] :percent eta: :eta", total = nrow(l))
+
+all_leagues %>% filter(id %in% leagues_to_get) %>% 
+  # slice(11:n()) %>%
+  # sample_n(5) %>% 
+  mutate(game_info=map(url, ~league_url_to_game_info_possibly(str_c("https://int.soccerway.com", .)))) -> w # check whether game timestamp was less than 2.5 hours ago; if so change score separator to :
+write_rds(w, "w.rds")
+bind_rows(w$game_info) -> mmm
+# glue({format(now(), "%Y-%m-%d %H:%M:%S")}, ": Done")
+beepr::beep(2)
+msg=str_c("Matches: ", nrow(mmm))
+# RPushbullet::pbPost("note", title="Scoresway dl complete", body=msg)
+beepr::beep(2)
+```
+
+
+
+## list the games we got. (Hint: show me only the new ones)
+
+Comment out filter line to include future games. And run this even if you don't intend to look at it (creating `mmm2`)
+
+
+```{r}
+# things are coming out double
+mmm %>% 
+  mutate(retr_after=(retrieved-time_stamp)/dhours(1)) %>% 
+  mutate(score=ifelse(retr_after<2.5, str_replace(score, "-", ":"), score)) %>% 
+  select(match, country, comp, comp_name, t1_name, t2_name, t1, t2, score, time_stamp, retrieved) -> mmm2
+mmm2 %>% filter(str_detect(score, " - ")) %>% 
+  distinct(match, .keep_all = T) %>% 
+  filter(time_stamp<now()) %>% # comment
+  arrange(desc(time_stamp)) -> d1
+games %>% filter(!str_detect(score, " - ")) -> d2
+d1 %>% semi_join(d2, by="match") -> mmx # rows of d1 also in d2
+View(mmx, "mmm")
+# mmm2 %>%
+#   distinct(match, .keep_all=T) %>% 
+#   filter(time_stamp<now()) %>% # comment out to get future games also
+#   arrange(desc(time_stamp)) %>% View("mmm")
+```
+
+
+
+
+combine with games df
+
+```{r}
+games <- read_rds("rds/games.rds")
+games <- combine2(games, mmm2)
+games %>% distinct(match, .keep_all = T) -> games
+saveRDS(games,"rds/games.rds")
+```
+
+## end ######################################################
+
+## jottings
+
+investigation
+
+a real url and non-real url
+
+```{r}
+the_real_url <- "https://ca.soccerway.com/national/france/cfa-2/20192020/group-i/r55112/"
+the_unreal_url <- "https://ca.soccerway.com/national/france/cfa-2/20192020/group-i/r66113/"
+```
+
+what does league_url_to_game_info return?
+
+```{r}
+d1=league_url_to_game_info(the_real_url)
+d1
+```
+
+a data frame.
+
+If it fails, I want something I can bind_rows with it:
+
+```{r}
+d2 <- league_url_to_game_info(the_unreal_url)
+d2 <- list()
+bind_rows(d1, d2)
+```
+
+try it
+
+```{r}
+league_url_to_game_info_possibly <- possibly(league_url_to_game_info, otherwise=list())
+urls <- c(the_real_url, the_unreal_url)
+enframe(urls) %>% 
+  mutate(x=map(value, ~league_url_to_game_info_possibly(.))) -> ddd
+ddd
+bind_rows(ddd$x)
+```
+
+
+
+

@@ -1,0 +1,893 @@
+# other stuff
+
+### checking
+
+```{r}
+games %>% filter(comp==41514)
+```
+
+```{r}
+games %>% filter(comp==41245) %>% group_by(t1) %>% 
+  count(t1_name) %>% arrange(desc(n)) %>% top_n(1)
+```
+
+
+#### get a league update (example)
+
+```{r}
+games %>% filter(comp==41506) %>% filter(!str_detect(score," - ")) %>% get_games() -> xx
+xx
+```
+
+
+## read from RDS if object lost/corrupted
+
+```{r}
+games=readRDS("rds/games.rds")
+```
+
+
+
+<!-- ## fill in missing countries -->
+
+<!--  ```{r} -->
+<!-- #xx=table_by_comp_id(732) -->
+<!-- (xx=map_df(dc[ij],table_by_comp_id)) -->
+<!-- xx %>% count(country,comp_name) %>% print(n=Inf) -->
+
+<!-- dim(games) -->
+<!-- games=combine(games,xx)  -->
+<!-- games -->
+<!-- saveRDS(games,"games.rds") -->
+
+<!-- # get competition ids for several days and combine -->
+<!-- # also need to think about getting list of matches (country is problem then: look up country later) -->
+
+
+<!-- (games=combine(games,xx) ) -->
+<!-- saveRDS(games,"games.rds") -->
+
+<!-- league=41547 -->
+<!-- (xx=table_by_id(league,"round")) # get latest page of results from scoresway -->
+
+<!-- (m2=matches_in(games,league)) # matches in current database -->
+<!-- (mm=missing_matches(games,league)) -->
+<!-- (xx=get_game_numbers(mm)) -->
+<!-- (xx=back_n(m2,300)) -->
+
+<!-- # if I find games from another league, I've (probably) gone back far enough. Or if the first thing in xx is the same league,  -->
+<!-- # I should keep going. -->
+
+<!-- # get latest page for several "rounds" -->
+
+<!-- ll=lgs$`2017` -->
+<!-- (leagues=ll[!is.na(ll)]) -->
+<!-- (xx=map_df(leagues,table_by_id,"round")) -->
+
+<!-- second_divs=c() -->
+
+<!-- (xx=back_n_league(39293,20,games)) -->
+<!-- ij=1:20 -->
+<!-- leagues[ij] -->
+<!-- (xx=map_df(leagues[ij],back_n_league,25,games)) -->
+
+<!-- # fill in missing: these are games that I already have, collecting results; this is good. -->
+<!-- ``` -->
+
+
+
+
+
+
+
+## fill in missing countries
+
+```{r}
+ll=lev2
+ll=dc
+
+n_back=10
+tibble(id=ll) %>% mutate(first=map_dbl(id,first_match,games)) %>% 
+  filter(!is.na(first)) %>% 
+  mutate(matches=map## get upcoming games
+
+get xx (games that I just got results for): this could stand to be shrunk to the games I actually *got* results for, not just the ones I might have done
+
+```{bash}
+rm rds/mci*.rds
+rm rds/sched*.rds
+```
+
+```{r}
+xx=readRDS("rds/xx.rds")
+xx %>% filter(str_detect(score, " - ")) %>% 
+  distinct(comp) %>% nrow()
+```
+
+these are the comps that just had games for which I have results, so they are ripe for getting new ones
+if error here, likely no rows
+
+```{r}
+xx %>% filter(str_detect(score, " - ")) %>% 
+  distinct(comp) %>% mutate(what=map(comp,~matches_by_id(.,"round"))) %>% 
+  mutate(long=map_int(what, ~length(.))) %>% 
+  filter(long==2) %>% 
+  mutate(country=map_chr(what,"country"),
+         matches=map(what,"matches")) %>% 
+  unnest(matches) -> out_there
+out_there %>% anti_join(games,by=c("matches"="match")) %>% arrange(matches) -> j
+j
+```
+
+this is what I don't already have, so get them:
+
+
+```{r}
+j %>%
+  select(match=matches,country) %>% 
+  get_games(prefix="sched") -> xy # then combine, above; here is where the sched needs to be checked
+xy
+stopifnot(nrow(xy)>0)
+xy = xy %>% mutate(score=ifelse(str_detect(score," - "),"upcoming",score)) 
+xy
+saveRDS(xy,"rds/xx.rds")
+xy %>% count(country) %>% arrange(desc(n)) %>% print(n=Inf)
+xy %>% arrange(time_stamp) %>% View("matches")
+beepr::beep(2)
+```
+
+update database as below
+
+
+## get upcoming matches, old method
+
+### initialization (throw away later)
+
+```{r}
+#last=tibble(comp=16,last_done=as.Date(0,origin="1970-01-01"))
+last_mci=readRDS("rds/last_mci.rds")
+```
+
+### get dates to update from today and get comp list
+
+clear mci.* before starting on this
+do not clear sched* files? Or only clear old ones?
+
+```{bash}
+rm rds/mci*.rds
+rm rds/sched*.rds
+```
+
+
+
+#### by date below
+
+```{r}
+today=Sys.time()
+today
+dtoday=as.Date(today)
+
+tibble(mydates=seq(dtoday-3,dtoday+7,"days")) %>% 
+  mutate(comps=map(mydates,date_comps)) %>% 
+  unnest() %>% 
+  distinct(comps) %>% 
+  pull(comps) -> 
+dc
+last_mci=readRDS("rds/last_mci.rds")
+z=tibble(comp=sort(dc)) %>% 
+  left_join(last_mci) %>% 
+  mutate(is_na=is.na(last_date)) %>% 
+  mutate(random=runif(length(dc))) %>% 
+  arrange(desc(is_na),last_date,random) %>% 
+  mutate(r=row_number())
+View(z, "leagues with games")
+beepr::beep(2)
+```
+
+
+Investigate `z` and choose `min_get` and `max_get`. Usually `min_get` will be 1, but if the run has failed before, find the most recent ones in `last_mci` and get them again.
+
+```{r}
+min_get=1
+max_get=49
+```
+
+get that many leagues
+
+
+```{r}
+xxx = z %>% 
+  slice(min_get:max_get) %>% 
+  select(comp)
+z2 = xxx %>% mutate(last_date=Sys.time()) %>% 
+  bind_rows(last_mci) %>% 
+  group_by(comp) %>% 
+  summarize(last_date=max(last_date))
+saveRDS(xxx,"rds/xxx.rds")
+saveRDS(z2,"rds/last_mci.rds")
+```
+
+get matches for those leagues: need to not get scores for these
+
+I seem to need to do this twice, matches being NULL the first time (but it works the second, and doesn't take long, because the matches are stored). 
+This can be done from command line with mci.R.
+
+```{r, warning=F}
+xxx=readRDS("rds/xxx.rds")
+xxx %>% 
+  mutate(matches=map(comp,matches_by_comp_id)) %>% 
+  mutate(istib=map_lgl(matches,is.tibble)) -> dd2 # this distinguishes lists from others
+xxx %>% 
+  mutate(matches=map(comp,matches_by_comp_id)) %>% 
+  mutate(istib=map_lgl(matches,is.tibble)) -> dd2 # this distinguishes lists from others
+dd2
+beepr::beep(2)
+```
+
+### get matches 
+
+```{r}
+dd2
+last_mci
+dd25 = dd2 %>% filter(istib) %>% left_join(last_mci,by=c("comp"="comp")) %>% 
+  arrange(!is.na(last_date),last_date)
+dd25 %>% count(last_date)
+dd25
+dd3 = dd25 # %>% slice(1:100) # change this number as appropriate
+dd3 = dd3 %>% mutate(last_date=today)
+dd3
+
+#games=readRDS("rds/games.rds")
+# update last
+
+last = dd3 %>% select(comp,last_date) %>% 
+  bind_rows(last_mci) %>% group_by(comp) %>% summarize_all(first)
+
+
+thing = dd3 %>% 
+  unnest() %>% 
+  anti_join(games,by=c("matches"="match")) %>% 
+  mutate(match=matches) %>% 
+  arrange(match)
+saveRDS(thing,"rds/thing.rds")
+thing
+```
+
+### get scheduled matches
+
+```{r warning=F}
+thing=readRDS("rds/thing.rds")
+thing
+thing %>% get_games(prefix="sched") -> xx # then combine, above; here is where the sched needs to be checked
+xx
+xx = xx %>% mutate(score=ifelse(str_detect(score," - "),"upcoming",score)) 
+xx
+saveRDS(xx,"rds/xx.rds")
+xx %>% count(country) %>% arrange(desc(n)) %>% print(n=Inf)
+xx %>% arrange(time_stamp) %>% View("matches")
+beepr::beep(2)
+```
+
+now go back and update database
+
+
+## get latest results -------------------------------
+
+get rid of match*.rds files before starting this. 
+
+```{bash}
+rm [12]*.html
+rm rds/match*.rds
+date
+```
+
+
+### games to get---------------
+
+the third arg to `results_to_get` is min number of days back
+I've done back to 2000 days (I think this is far enough)
+
+Ideas: 
+- randomly choose no-result games from the past to fill in
+- randomly (somehow) choose ungotten games to get (eg. ones "next to" games I already got)
+- get all games from international comps for predicting world cup (by June), or use pinnacle odds
+
+
+```{r gg2}
+# gg=results_to_get(games,4.0)
+min_hours=2.5
+max_hours=3
+gg=results_to_get(games,max_hours/24,since_hours = min_hours)
+#if (nrow(gg)>1000) gg=sample_n(gg,1000)
+gg = gg %>% arrange(time_stamp)
+View(gg,"matches to get")
+saveRDS(gg,"rds/gg.rds")
+```
+
+## get them ------------------
+
+this works now (but it fails when the HTML is not downloaded, I think)
+
+```{r xx3,warning=FALSE}
+gg=readRDS("rds/gg.rds")
+gg %>% get_games() -> xx
+saveRDS(xx,"rds/xx.rds")
+#xx=get_games(gg)
+xx %>% select(-(1:3)) %>% filter(str_detect(score," - ")) %>% unite(comp_full,country,comp_name) %>% 
+  arrange(time_stamp) %>% View("results")
+# xx %>% filter(str_detect(score," - ")) %>% count(country) %>% arrange(desc(n)) 
+xx %>% mutate(is_done=str_detect(score, " - ")) %>% 
+  count(is_done)
+beepr::beep(2)
+```
+
+```{r}
+games
+```
+
+
+## get upcoming games
+
+get xx (games that I just got results for): this could stand to be shrunk to the games I actually *got* results for, not just the ones I might have done
+
+```{bash}
+rm rds/mci*.rds
+rm rds/sched*.rds
+```
+
+```{r}
+xx=readRDS("rds/xx.rds")
+xx %>% filter(str_detect(score, " - ")) %>% 
+  distinct(comp) %>% nrow()
+```
+
+these are the comps that just had games for which I have results, so they are ripe for getting new ones
+if error here, likely no rows
+
+```{r}
+xx %>% filter(str_detect(score, " - ")) %>% 
+  distinct(comp) %>% mutate(what=map(comp,~matches_by_id(.,"round"))) %>% 
+  mutate(long=map_int(what, ~length(.))) %>% 
+  filter(long==2) %>% 
+  mutate(country=map_chr(what,"country"),
+         matches=map(what,"matches")) %>% 
+  unnest(matches) -> out_there
+out_there %>% anti_join(games,by=c("matches"="match")) %>% arrange(matches) -> j
+j
+```
+
+this is what I don't already have, so get them:
+
+
+```{r}
+j %>%
+  select(match=matches,country) %>% 
+  get_games(prefix="sched") -> xy # then combine, above; here is where the sched needs to be checked
+xy
+stopifnot(nrow(xy)>0)
+xy = xy %>% mutate(score=ifelse(str_detect(score," - "),"upcoming",score)) 
+xy
+saveRDS(xy,"rds/xx.rds")
+xy %>% count(country) %>% arrange(desc(n)) %>% print(n=Inf)
+xy %>% arrange(time_stamp) %>% View("matches")
+beepr::beep(2)
+```
+
+update database as below
+
+
+## get upcoming matches, old method
+
+### initialization (throw away later)
+
+```{r}
+#last=tibble(comp=16,last_done=as.Date(0,origin="1970-01-01"))
+last_mci=readRDS("rds/last_mci.rds")
+```
+
+### get dates to update from today and get comp list
+
+clear mci.* before starting on this
+do not clear sched* files? Or only clear old ones?
+
+```{bash}
+rm rds/mci*.rds
+rm rds/sched*.rds
+```
+
+
+
+#### by date below
+
+```{r}
+today=Sys.time()
+today
+dtoday=as.Date(today)
+
+tibble(mydates=seq(dtoday-3,dtoday+7,"days")) %>% 
+  mutate(comps=map(mydates,date_comps)) %>% 
+  unnest() %>% 
+  distinct(comps) %>% 
+  pull(comps) -> 
+dc
+last_mci=readRDS("rds/last_mci.rds")
+z=tibble(comp=sort(dc)) %>% 
+  left_join(last_mci) %>% 
+  mutate(is_na=is.na(last_date)) %>% 
+  mutate(random=runif(length(dc))) %>% 
+  arrange(desc(is_na),last_date,random) %>% 
+  mutate(r=row_number())
+View(z, "leagues with games")
+beepr::beep(2)
+```
+
+
+Investigate `z` and choose `min_get` and `max_get`. Usually `min_get` will be 1, but if the run has failed before, find the most recent ones in `last_mci` and get them again.
+
+```{r}
+min_get=1
+max_get=49
+```
+
+get that many leagues
+
+
+```{r}
+xxx = z %>% 
+  slice(min_get:max_get) %>% 
+  select(comp)
+z2 = xxx %>% mutate(last_date=Sys.time()) %>% 
+  bind_rows(last_mci) %>% 
+  group_by(comp) %>% 
+  summarize(last_date=max(last_date))
+saveRDS(xxx,"rds/xxx.rds")
+saveRDS(z2,"rds/last_mci.rds")
+```
+
+get matches for those leagues: need to not get scores for these
+
+I seem to need to do this twice, matches being NULL the first time (but it works the second, and doesn't take long, because the matches are stored). 
+This can be done from command line with mci.R.
+
+```{r, warning=F}
+xxx=readRDS("rds/xxx.rds")
+xxx %>% 
+  mutate(matches=map(comp,matches_by_comp_id)) %>% 
+  mutate(istib=map_lgl(matches,is.tibble)) -> dd2 # this distinguishes lists from others
+xxx %>% 
+  mutate(matches=map(comp,matches_by_comp_id)) %>% 
+  mutate(istib=map_lgl(matches,is.tibble)) -> dd2 # this distinguishes lists from others
+dd2
+beepr::beep(2)
+```
+
+### get matches 
+
+```{r}
+dd2
+last_mci
+dd25 = dd2 %>% filter(istib) %>% left_join(last_mci,by=c("comp"="comp")) %>% 
+  arrange(!is.na(last_date),last_date)
+dd25 %>% count(last_date)
+dd25
+dd3 = dd25 # %>% slice(1:100) # change this number as appropriate
+dd3 = dd3 %>% mutate(last_date=today)
+dd3
+
+#games=readRDS("rds/games.rds")
+# update last
+
+last = dd3 %>% select(comp,last_date) %>% 
+  bind_rows(last_mci) %>% group_by(comp) %>% summarize_all(first)
+
+
+thing = dd3 %>% 
+  unnest() %>% 
+  anti_join(games,by=c("matches"="match")) %>% 
+  mutate(match=matches) %>% 
+  arrange(match)
+saveRDS(thing,"rds/thing.rds")
+thing
+```
+
+### get scheduled matches
+
+```{r warning=F}
+thing=readRDS("rds/thing.rds")
+thing
+thing %>% get_games(prefix="sched") -> xx # then combine, above; here is where the sched needs to be checked
+xx
+xx = xx %>% mutate(score=ifelse(str_detect(score," - "),"upcoming",score)) 
+xx
+saveRDS(xx,"rds/xx.rds")
+xx %>% count(country) %>% arrange(desc(n)) %>% print(n=Inf)
+xx %>% arrange(time_stamp) %>% View("matches")
+beepr::beep(2)
+```
+
+now go back and update database
+
+
+## get latest results -------------------------------
+
+get rid of match*.rds files before starting this. 
+
+```{bash}
+rm [12]*.html
+rm rds/match*.rds
+date
+```
+
+
+### games to get---------------
+
+the third arg to `results_to_get` is min number of days back
+I've done back to 2000 days (I think this is far enough)
+
+Ideas: 
+- randomly choose no-result games from the past to fill in
+- randomly (somehow) choose ungotten games to get (eg. ones "next to" games I already got)
+- get all games from international comps for predicting world cup (by June), or use pinnacle odds
+
+
+```{r gg3}
+# gg=results_to_get(games,4.0)
+min_hours=2.5
+max_hours=3
+gg=results_to_get(games,max_hours/24,since_hours = min_hours)
+#if (nrow(gg)>1000) gg=sample_n(gg,1000)
+gg = gg %>% arrange(time_stamp)
+View(gg,"matches to get")
+saveRDS(gg,"rds/gg.rds")
+```
+
+## get them ------------------
+
+this works now (but it fails when the HTML is not downloaded, I think)
+
+```{r xx1,warning=FALSE}
+gg=readRDS("rds/gg.rds")
+gg %>% get_games() -> xx
+saveRDS(xx,"rds/xx.rds")
+#xx=get_games(gg)
+xx %>% select(-(1:3)) %>% filter(str_detect(score," - ")) %>% unite(comp_full,country,comp_name) %>% 
+  arrange(time_stamp) %>% View("results")
+# xx %>% filter(str_detect(score," - ")) %>% count(country) %>% arrange(desc(n)) 
+xx %>% mutate(is_done=str_detect(score, " - ")) %>% 
+  count(is_done)
+beepr::beep(2)
+```
+
+
+(first,match_search,n_back)) %>% unnest() %>% 
+  anti_join(games,by=c("matches"="match")) %>% 
+  mutate(match=matches) %>% 
+  mutate(country=NA_character_) %>% 
+  get_games() -> xx
+xx %>% print(n=Inf)
+xx %>% count(comp) -> d
+tibble(comp=ll) %>% left_join(d) %>% filter(!is.na(n)) %>% print(n=Inf) # counts how many of the searched-for comps had games found
+
+
+games %>% arrange(comp,country) %>% print(n=Inf)
+
+# fill in missing matches in a league (that I do not already have)
+
+# experimenting with fill
+
+```{r}
+d=tribble(
+  ~x, ~y,
+  1, "a",
+  1, NA,
+  1, "a",
+  2, "b",
+  2, NA,
+  2, "b",
+  3, NA
+)
+d %>%  arrange(x,y) %>% group_by(x) %>% fill(y)
+
+games %>% arrange(comp,country) %>% group_by(comp) %>% fill(country) -> ggg
+ggg %>% count(country) %>% print(n=Inf)
+games=ggg
+
+games %>% group_by(t1) %>% count(country) %>% filter(is.na(country))
+games %>% group_by(t1) %>% count(country) %>% filter(t1 %in% c(78,83,87,89))
+```
+
+
+
+
+## checking for changes in team names and other junk
+
+```{r}
+all_names=function(id,games) {
+  games %>% filter(t1==id) %>% count(t1_name)
+}
+id=1290
+all_names(id,games)
+games %>% filter(t1==id) %>% arrange(time_stamp) %>% print(n=Inf)
+
+games
+games %>% group_by(t1) %>% count(t1_name) %>% count(t1) %>% filter(nn>1) %>% print(n=Inf) %>% 
+  mutate(names=map(t1,all_names,games)) %>% unnest() %>% print(n=Inf)
+```
+
+dc = comps to get
+
+```{r}
+leagues %>% filter(level==99) %>% pull(comp) -> dc
+tibble(comp=dc) %>% mutate(matches=map(comp,matches_by_id_tibble,"round")) %>%  # print(n=Inf)
+  unnest() %>% 
+  anti_join(games,by=c("matches"="match")) %>% 
+  mutate(match=matches) %>% get_games() -> xx # then combine, above
+xx %>% select(-(1:3))
+xx %>% count(country) %>% arrange(n) %>% print(n=Inf)
+```
+
+
+## thinking about missing games
+
+```{r}
+games
+```
+
+sort by match and diff from previous
+
+ideas from <https://stackoverflow.com/questions/39176855/find-difference-between-rows-by-id-but-place-difference-on-first-row-in-r?rq=1>
+
+```{r}
+suggested = games %>%  arrange(match) %>% 
+  mutate(diff=match-lag(match)) %>% 
+  mutate(diffl=lead(match)-match) %>% 
+  mutate(md=pmax(diff,diffl)) %>% 
+  select(match,diff,diffl,md) %>% 
+  mutate(suggest=case_when(
+    diff>1 ~ match-1,
+    diffl>1 ~ match+1,
+    TRUE ~ NA_real_)) %>% 
+  filter(suggest>2000000)
+View(suggested)
+```
+
+get rid of old ones
+
+```{bash}
+rm rds/sched*.rds
+```
+
+get sample first
+
+```{r}
+nsamp=1000
+gg = suggested %>% mutate(country=NA_character_) %>% 
+  mutate(gotmatch=match,
+         match=suggest) %>% 
+  sample_n(nsamp) 
+gg
+saveRDS(gg,"rds/suggested.rds")
+```
+
+
+construct a data frame for get_games
+
+```{r}
+gg %>% 
+  get_games(prefix="sched") %>% 
+  filter(t1>0)
+xx
+saveRDS(xx,"rds/xx.rds")
+```
+
+go back to "update database" to add these on, or:
+
+```{r}
+games=combine2(games,xx) 
+saveRDS(games,"games.rds")
+```
+
+
+can I get country from `comp_name`?
+
+```{r}
+games %>% group_by(comp,comp_name) %>% count(country)
+```
+
+to make a lookup table
+
+
+
+## fixing up Scotland
+
+```{r}
+games %>% filter(comp==41506) %>% arrange(desc(time_stamp))
+```
+
+```{r}
+games %>% filter(match!=2473979) -> games
+```
+
+
+## fixing up character problem from downloading matches in RScript
+
+### create normal forms
+
+idea: 
+- get a normal-form version of games, teams, leagues
+- find most common names
+- reconstitute games
+
+Save games first
+
+```{r}
+saveRDS(games,"rds/games.rds")
+```
+
+warnings, if any: uninitialized col n?
+
+read back, for checking
+
+```{r}
+g2=readRDS("rds/games.rds")
+g2 %>% filter(comp==41514)
+```
+
+Seems to work.
+
+```{r}
+names(games)
+```
+
+`top_n` key for later.
+
+Normal form:
+
+```{r}
+match = games %>% select(match,t1,t2,comp,score,time_stamp,retrieved)
+```
+
+```{r}
+team1=games %>% select(t1,t1_name) %>% rename(id=t1,name=t1_name)
+team1
+team2=games %>% select(t2,t2_name) %>% rename(id=t2,name=t2_name)
+team=bind_rows(team1,team2)
+team
+```
+
+```{r}
+comp = games %>% select(comp,comp_name,country)
+```
+
+### handle comps first
+
+first handle country of comp
+
+```{r}
+comp_country = comp %>% group_by(comp) %>% count(country) %>% arrange(desc(n)) %>% top_n(1) %>% select(-n)
+```
+
+comp names
+
+```{r}
+comp_name = comp %>% group_by(comp) %>% count(comp_name) %>% arrange(desc(n)) %>% top_n(1) %>% select(-n)
+comp_name
+```
+
+### now handle teams
+
+```{r}
+team_name = team %>% group_by(id) %>% count(name) %>% arrange(desc(n)) %>% top_n(1) %>% select(-n)
+```
+
+```{r}
+names(games)
+games = match %>% left_join(team_name,by=c("t1"="id")) %>% rename(t1_name=name) %>% 
+  left_join(team_name,by=c("t2"="id")) %>% rename(t2_name=name) %>% 
+  left_join(comp_country) %>% 
+  left_join(comp_name)
+saveRDS(games,"rds/games.rds")
+```
+
+## all the fixup code
+
+```{r fixup}
+saveRDS(games,"rds/games2.rds")
+match = games %>% select(match,t1,t2,comp,score,time_stamp,retrieved)
+team1=games %>% select(t1,t1_name) %>% rename(id=t1,name=t1_name)
+team2=games %>% select(t2,t2_name) %>% rename(id=t2,name=t2_name)
+team=bind_rows(team1,team2)
+comp = games %>% select(comp,comp_name,country)
+comp_country = comp %>% group_by(comp) %>% count(country) %>% arrange(desc(n)) %>% top_n(1) %>% select(-n)
+comp_name = comp %>% group_by(comp) %>% count(comp_name) %>% arrange(desc(n)) %>% top_n(1) %>% select(-n)
+team_name = team %>% group_by(id) %>% count(name) %>% arrange(desc(n)) %>% top_n(1) %>% select(-n)
+games = match %>% left_join(team_name,by=c("t1"="id")) %>% rename(t1_name=name) %>% 
+  left_join(team_name,by=c("t2"="id")) %>% rename(t2_name=name) %>% 
+  left_join(comp_country) %>% 
+  left_join(comp_name)
+saveRDS(games,"rds/games.rds")
+```
+
+#### find stuff
+
+```{r}
+games %>% filter(t1==1242) %>% arrange(time_stamp)
+```
+
+## remove wrong scores
+
+```{r}
+game_list=2801777:2801802
+game_list
+```
+
+```{r}
+games %>% mutate(score=ifelse(match %in% game_list, "upcoming", score)) %>% 
+  saveRDS("rds/games.rds")
+```
+
+```{r}
+games %>% filter(comp==48274)
+```
+
+
+## get matches that were missed before
+
+are they there or missing?
+
+```{r}
+country="England"
+matches=2801777:2801802
+games %>%  filter(match %in% matches)
+```
+
+
+Input is country and vector of match numbers
+
+```{r}
+thing=tibble(country=country, match=matches)
+thing
+saveRDS(thing, "rds/thing.rds")
+```
+
+now go to "get scheduled matches" in get upcoming matches
+
+
+
+
+## re-get TBA matches (at some space from previous get) --------------------
+
+## check matches where retrieved is too soon after kickoff: delete and re-get
+
+## england championship blank and reget
+
+```{r}
+games %>% filter(comp==48274) %>% arrange(desc(time_stamp)) %>% 
+  filter(between(match, 2801979, 2802000))
+```
+
+those; set score to 17:00
+
+```{r}
+games %>% mutate(score=case_when(
+  comp==48274 & between(match, 2801977, 2802000) ~ "17:00",
+  TRUE                                           ~ score
+)) -> games
+```
+
+save
+
+```{r}
+saveRDS(games, "rds/games.rds")
+```
+
+## get desired competitions
+
+
+create dc with comp ids, then go back to 3.
+
+```{r}
+dc=c(119)
+```
+
+try this in get upcoming games, old version

@@ -1,0 +1,52 @@
+---
+title: "Selenium server"
+output: html_notebook
+---
+
+## Start
+
+Go to Downloads and run java -jar selenium-server-standalone-3.9.1.jar .
+
+Then:
+
+## packages
+
+```{r}
+library(tidyverse)
+library(RSelenium)
+```
+
+connect
+
+```{r}
+remDr <- remoteDriver(port = 4444L, browserName="chrome")
+remDr
+```
+
+gotta be chrome
+
+Open connection and check status
+
+```{r}
+remDr$open()
+remDr$getStatus()
+```
+
+go to a url
+
+```{r}
+my_url="https://int.soccerway.com"
+remDr$navigate(my_url)
+remDr$getCurrentUrl()
+```
+
+find something on the page
+
+```{r}
+web_element <- remDr$findElement(using="class", value="cal_week_2")
+web_element$getElementAttribute("class")
+```
+
+got it!
+
+currently I can still get at the matches pages by URL, so do that for now

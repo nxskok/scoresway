@@ -1,0 +1,11 @@
+---
+title: "copying things from btstan"
+output: html_notebook
+---
+
+```{r}
+games=readRDS("/home/ken/teaching/btstan/rds/games.rds")
+games
+saveRDS(games,"rds/games.rds")
+```
+

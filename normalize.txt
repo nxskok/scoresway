@@ -1,0 +1,7 @@
+games: team id, score/ko, time stamp, when retrieved, comp id
+teams: team id, team name
+comps: comp id, comp name, country
+
+extract from `games`, have script to do extraction whenever (that is, `games` is "current" until ready)
+
+new functions to work with normalized data set and correct problems

@@ -1,0 +1,129 @@
+---
+title: "from soccerway"
+output: html_notebook
+---
+
+## packages
+
+```{r}
+library(tidyverse)
+library(rvest)
+library(lubridate)
+source("functions.R")
+games=readRDS("rds/games.rds")
+```
+
+## Start here
+
+find last retrieval of each comp
+
+```{r}
+games %>% group_by(comp) %>% summarize(last=max(retrieved)) -> last_got
+# last_got
+# last_got %>% mutate(since=(Sys.time()-last)/ddays(1)) %>% filter(since<0.3) %>% View("last got")
+```
+
+next: get all the leagues in [t-7, t+3], or create a lookup table (or find a mechanism to go back pages of league results; this would currently have to be back summary pages)
+
+```{r}
+omits=c(50839, 54473, 50408, 50409, 54468, 54472, 54467, 54474, 54469, 54475, 54470)
+today=Sys.Date()
+rate <- rate_delay(0.5)
+leagues_from_date_slow=slowly(leagues_from_date, rate)
+# seq(today+50, today+80, by=1) %>% enframe(value="date_date") %>%
+seq(today-7, today+3, by=1) %>% enframe(value="date_date") %>%
+  mutate(date=format(date_date, "%Y/%m/%d")) %>% 
+  mutate(d=map(date, ~leagues_from_date_slow(.))) %>% 
+  unnest() %>% 
+  select(league_url, comp_id) %>% 
+  distinct() -> d
+d %>% filter(!comp_id %in% omits) %>% 
+  left_join(last_got,by=c("comp_id"="comp")) %>% mutate(hours=(Sys.time()-last)/dhours(1))  -> d1
+d1 %>% select(last, hours, league_url) %>% 
+  arrange(desc(hours))
+d1 %>% 
+  filter(is.na(hours) | hours>1.5) %>% 
+  arrange(league_url) -> d
+d
+```
+
+
+```{r, warning=F}
+rate <- rate_delay(0.2)
+pb <- progress_estimated(nrow(d)) # old, pb <- progress_bar$new(format = " progress [:bar] :percent eta: :eta", total = nrow(l))
+
+scores_from_league_slow=slowly(scores_from_league, rate)
+d %>% mutate(scores=map2(league_url, comp_id, ~scores_from_league_slow(.x, .y, pb))) %>% 
+  unnest(scores) %>% select(-league_url, -comp_id) -> today_games
+# today_games
+```
+
+checking results
+
+```{r}
+# today_games
+# today_games %>% arrange(desc(time_stamp))
+games %>% select(match, t1_name, t2_name, score, country, comp_name, time_stamp) %>% distinct(match, .keep_all = T) -> tabl1
+today_games %>% select(match, t1_name, t2_name, score, country, comp_name, time_stamp) %>% distinct(match, .keep_all = T) -> tabl2
+
+tabl2 %>% left_join(tabl1, by="match") %>% mutate(isnay=is.na(score.y), isnax=is.na(score.x), notry=!str_detect(score.y, "-"), rx=str_detect(score.x, "-")) %>% 
+  filter((isnay & !isnax ) | (notry & rx)) %>% 
+  select(t1_name.x, t2_name.x, country.x, comp_name.x, score.x, score.y, time_stamp.x) %>% 
+  View("Latest")
+```
+
+
+If any errors, this is the one it choked on:
+
+```{r}
+readRDS("id.rds")
+```
+
+update database
+
+```{r}
+count_types=function(g) {
+  g %>% mutate(score_is=case_when(
+    str_detect(score, " - ") ~ "score",
+    TRUE                   ~ "no score"
+  )) %>% count(score_is)
+}
+tab1=count_types(games)
+combine2(games, today_games) -> games
+games %>% distinct(match, .keep_all = T) -> games
+tab2=count_types(games)
+saveRDS(games,"rds/games.rds")
+tab1 %>% left_join(tab2, by="score_is") %>% 
+  mutate(change=n.y-n.x)
+```
+
+check for games with too little time
+
+```{r}
+games %>% mutate(diff=(retrieved-time_stamp)/dhours(1)) %>% 
+  mutate(has_result=str_detect(score," - ")) %>% 
+  mutate(since=case_when(
+    !has_result ~ 1e10,
+    TRUE        ~ diff
+  )) %>% 
+  mutate(score=ifelse(since<2.5, "00:16", score)) %>% 
+  select(-diff, -has_result, -since) -> games
+saveRDS(games, "rds/games.rds")
+games %>% filter(score=="00:16") %>% select(country:retrieved)
+```
+
+games gotten and ungotten
+
+```{r}
+games %>% 
+  mutate(the_date=as.Date(time_stamp, tz="America/Toronto")) %>% 
+  mutate(is_result=case_when(
+    str_detect(score, " - ") ~ "result",
+    TRUE                     ~ "no result")) %>% 
+  filter(the_date<=Sys.Date()+1) %>% 
+  count(the_date, is_result) %>% 
+  spread(is_result, n, fill=0) %>% 
+  mutate(percent=result/(result+`no result`)*100) %>% 
+  arrange(desc(the_date))
+```
+

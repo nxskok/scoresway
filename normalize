@@ -1,0 +1,3 @@
+games: team id, score/ko, time stamp, when retrieved, comp id
+teams: team id, team name
+comps: comp id, comp name, country

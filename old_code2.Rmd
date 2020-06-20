@@ -1,0 +1,86 @@
+###### pancake
+
+this is subsumed in above
+
+Investigate `z` and choose `min_get` and `max_get`. Usually `min_get` will be 1, but if the run has failed before, find the most recent ones in `last_mci` and get them again.
+
+```{r}
+min_get=1
+max_get=5
+```
+
+get that many leagues
+
+
+```{r}
+xxx = z %>% 
+  slice(min_get:max_get) %>% 
+  select(comp)
+z2 = xxx %>% mutate(last_date=Sys.time()) %>% 
+  bind_rows(last_mci) %>% 
+  group_by(comp) %>% 
+  summarize(last_date=max(last_date))
+saveRDS(xxx,"rds/xxx.rds")
+saveRDS(z2,"rds/last_mci.rds")
+```
+
+get matches for those leagues
+
+I seem to need to do this twice, matches being NULL the first time (but it works the second, and doesn't take long, because the matches are stored). 
+This can be done from command line with mci.R.
+
+```{r, warning=F}
+xxx=readRDS("rds/xxx.rds")
+xxx %>% 
+  mutate(matches=map(comp,matches_by_comp_id)) %>% 
+  mutate(istib=map_lgl(matches,is.tibble)) -> dd2 # this distinguishes lists from others
+xxx %>% 
+  mutate(matches=map(comp,matches_by_comp_id)) %>% 
+  mutate(istib=map_lgl(matches,is.tibble)) -> dd2 # this distinguishes lists from others
+dd2
+beepr::beep(2)
+```
+
+### get matches 
+
+```{r}
+dd2
+last_mci
+dd25 = dd2 %>% filter(istib) %>% left_join(last_mci,by=c("comp"="comp")) %>% 
+  arrange(!is.na(last_date),last_date)
+dd25 %>% count(last_date)
+dd25
+dd3 = dd25 # %>% slice(1:100) # change this number as appropriate
+dd3 = dd3 %>% mutate(last_date=today)
+dd3
+
+#games=readRDS("rds/games.rds")
+# update last
+
+last = dd3 %>% select(comp,last_date) %>% 
+  bind_rows(last_mci) %>% group_by(comp) %>% summarize_all(first)
+
+
+thing = dd3 %>% 
+  unnest() %>% 
+  anti_join(games,by=c("matches"="match")) %>% 
+  mutate(match=matches) %>% 
+  arrange(match)
+saveRDS(thing,"rds/thing.rds")
+thing
+```
+
+### get scheduled matches
+
+```{r warning=F}
+thing=readRDS("rds/thing.rds")
+thing
+thing %>% get_games(prefix="sched") -> xx # then combine, above; here is where the sched needs to be checked
+xx
+saveRDS(xx,"rds/xx.rds")
+xx %>% count(country) %>% arrange(desc(n)) %>% print(n=Inf)
+xx %>% arrange(time_stamp) %>% View("matches")
+beepr::beep(2)
+```
+
+now go back and update database

@@ -1,0 +1,44 @@
+---
+title: "elo package"
+output: html_notebook
+---
+
+## packages
+
+```{r}
+library(tidyverse)
+library(elo)
+```
+
+## tourney
+
+```{r}
+tourney <- tribble(
+  ~t1, ~t2, ~r,
+  "a", "b", 1,
+  "c", "a", 0
+)
+tourney
+```
+
+```{r}
+ratings <- c("a"=1700, "b"=1500, "c"=1500)
+```
+
+```{r}
+ans=elo.run(r~adjust(t1, 20)+t2, data=tourney, k=15, initial.elos = ratings)
+summary(ans)
+```
+
+```{r}
+rank.teams(ans)
+```
+
+```{r}
+ans %>% as.matrix()
+```
+
+```{r}
+ans %>% as.data.frame()
+```
+

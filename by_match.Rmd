@@ -1,0 +1,301 @@
+ idea: get matches from eg today *by game*
+
+## startup
+
+```{r}
+library(tidyverse)
+library(dplyr, warn.conflicts = F)
+library(rvest)
+library(lubridate)
+library(progress)
+library(janitor)
+library(conflicted)
+conflict_prefer("pluck", "purrr")
+conflict_prefer("filter", "dplyr") 
+source("functions.R")
+source("new_from_here.R")
+```
+
+
+## get today's leagues
+
+### set up playoff leagues with urls
+
+needs columns `comp_id` and `league_url` 
+
+```{r}
+playoffs <- tribble(
+  ~comp_id, ~league_url,
+  54897, "https://int.soccerway.com/national/armenia/premier-league/20192020/championship-round/r54897/",
+  54898, "https://int.soccerway.com/national/armenia/premier-league/20192020/relegation-round/r54898/",
+  54161, "https://int.soccerway.com/national/austria/bundesliga/20192020/championship-round/r54161/",
+  54165, "https://int.soccerway.com/national/austria/bundesliga/20192020/relegation-round/r54165/",
+  54088, "https://int.soccerway.com/national/bulgaria/a-pfg/20192020/relegation-round/r54088/",
+  54083, "https://int.soccerway.com/national/bulgaria/a-pfg/20192020/championship-round/r54083/",
+  54281, "https://int.soccerway.com/national/denmark/superliga/20192020/championship-round/r54281/",
+  54286, "https://int.soccerway.com/national/denmark/superliga/20192020/relegation-round/r54286",
+  53558, "https://int.soccerway.com/national/greece/super-league/20192020/championship-round/r53558/",
+  53559, "https://int.soccerway.com/national/greece/super-league/20192020/relegation-round/r53559/",
+  53506, "https://int.soccerway.com/national/poland/ekstraklasa/20192020/relegation-round/r53506/",
+  53504, "https://int.soccerway.com/national/poland/ekstraklasa/20192020/championship-round/r53504/",
+  54244, "https://int.soccerway.com/national/romania/liga-i/20192020/championship-round/r54244/",
+  54246, "https://int.soccerway.com/national/romania/liga-i/20192020/relegation-round/r54246/",
+  53770, "https://int.soccerway.com/national/slovakia/super-liga/20192020/championship-round/r53770/",
+  53772, "https://int.soccerway.com/national/slovakia/super-liga/20192020/relegation-round/r53772/",
+  54066, "https://int.soccerway.com/national/ukraine/premier-league/20192020/championship-round/r54066/",
+  54068, "https://int.soccerway.com/national/ukraine/premier-league/20192020/relegation-round/r54068/"
+)
+playoffs
+```
+
+
+```{r today}
+# today <- strftime(today()+1, format="%Y/%m/%d")
+# today 
+# l <- leagues_from_date(today)
+# l
+# nrow(l)
+# l %>% separate(league_url, into=c("a","b", "c", "d", "category", "country", "league1", "league2"), extra="drop") %>%
+#   unite(league, league1, league2) %>%
+#   select(country, league, comp_id) %>%
+#   arrange(country, league) %>%
+#  View("today's leagues")
+days <- (-3):4
+tibble(days) %>% mutate(thedate=strftime(today()+days, format = "%Y/%m/%d")) %>% 
+  mutate(l=map(thedate, ~leagues_from_date(.))) %>% 
+  unnest(l) %>% 
+  group_by(comp_id) %>% 
+  arrange(league_url) %>% 
+  slice(1) %>% 
+  select(comp_id, league_url) -> l
+# View(l, "ll")
+l %>% bind_rows(playoffs) -> l
+nrow(l)
+```
+
+get match numbers for all these (all the matches on soccerway for all the leagues that are playing today)
+
+```{r}
+league_url_to_match_numbers_possibly <- possibly(league_url_to_match_numbers, otherwise=list())
+pb <- progress_bar$new(format = " progress [:bar] :percent eta: :eta", total = nrow(l), width=50)
+l %>% mutate(match_number=map(league_url, ~league_url_to_match_numbers_possibly(.))) %>% 
+  unnest(match_number) -> m
+# m %>% filter(comp_id==53499) %>% arrange(desc(date))
+# View(m)
+"m done"
+```
+
+save m
+
+```{r}
+write_rds(m, "m.rds")
+```
+
+
+## get games and m (can start from here)
+
+```{r}
+m <- read_rds("m.rds")
+games <- read_rds("rds/games.rds")
+nrow(games)
+```
+
+
+select games with results and anti-join to above
+
+I want to get game details if: (i) the game doesn't exist at all in games; (ii) the game does exist and might have a result (which includes postponed)
+
+## (i) in m but not in games at all (do this first)
+
+```{r}
+base="http://www.soccerway.com"
+m %>% anti_join(games, by="match") %>% 
+  mutate(match_url=str_c(base, match_url)) -> games_to_get
+nrow(games_to_get)
+pb <- progress_bar$new(format = " progress [:bar] :percent eta: :eta", 
+                       total = nrow(games_to_get), width = 50)
+games <- new_combine(games_to_get, "do not have")
+nrow(games)
+```
+
+if empty, go back and get games again, then proceed to (ii) and (iii).
+
+## (ii) game does exist, doesn't have a result, and might have a result now (I need the url and the timestamp)
+
+this doesn't seem to get the ones like 2:1
+
+```{r, might-have}
+base="http://www.soccerway.com"
+get_postponed <- "y"
+games %>% filter(!str_detect(score, " - ")) %>% # there might be none of these
+  filter(!str_detect(score, "Cancelled")) %>% 
+  filter(!str_detect(score, "Postponed") | get_postponed=="y")  -> g 
+m %>% inner_join(g, by="match") %>% 
+  select(league_url, match_url, date, match, time_stamp) %>% 
+  mutate(match_url=str_c(base, match_url)) %>% 
+  filter((now()-time_stamp)/dhours(1)>2.5) %>% 
+  # filter((now()-time_stamp)/ddays(1)<7) %>% # drop off after a week
+  select(-time_stamp) -> games_to_get
+nrow(games_to_get)
+pb <- progress_bar$new(format = "pr [:bar] :percent eta: :eta", total = nrow(games_to_get), width = 50)
+games <- new_combine(games_to_get, "new games")
+nrow(games)
+```
+
+## (iii) games scheduled for the next little while
+
+
+
+```{r, coming up}
+base="http://www.soccerway.com"
+games %>% filter(!str_detect(score, " - ")) %>% # there might be none of these
+  filter(!str_detect(score, "Cancelled")) %>% 
+  filter(!str_detect(score, "Postponed")) -> g
+m %>% inner_join(g, by="match") %>% 
+  select(match, country, comp_name, t1_name, t2_name, score, time_stamp) %>% 
+  arrange(time_stamp) %>% 
+  View("future games")
+  # filter((now()-time_stamp)/ddays(1)<7) %>% # drop off after a week
+  # select(-time_stamp) -> games_to_get
+# ne
+# View(games_to_get, "future games")
+# pb <- progress_bar$new(format = " progress [:bar] :percent eta: :eta", total = nrow(games_to_get))
+# games <- new_combine(games_to_get, "future games")
+```
+
+## (iv) remove results gotten too soon and reget
+
+```{r}
+base="http://www.soccerway.com"
+games %>% filter(stat!="FT") %>% 
+  filter(str_detect(score, " - ")) -> g
+g
+m %>% inner_join(g, by="match") %>% 
+  select(league_url, match_url, date, match, time_stamp) %>% 
+  mutate(match_url=str_c(base, match_url)) %>% 
+  select(-time_stamp) -> games_to_get
+nrow(games_to_get)
+pb <- progress_bar$new(format = " progress [:bar] :percent eta: :eta", total = nrow(games_to_get))
+games <- new_combine(games_to_get, "re-gotten games")
+```
+
+
+## (v) tidy up extraneous cols 
+
+
+
+```{r}
+games %>% distinct()
+to_keep <- function(x) {
+  x %>% discard(is.null) %>% 
+    discard(is.na) -> y
+  length(y) == length(x)
+}
+
+(length(names(games)))
+games %>% select(where(~to_keep(.))) -> games
+(length(names(games)))
+nrow(games)
+games %>% distinct(match, .keep_all = TRUE) -> games
+nrow(games)
+saveRDS(games,"rds/games.rds")
+```
+
+
+
+
+## jottings
+
+
+### go from here (now a function)
+
+```{r go-from-here}
+url_to_game_possibly=possibly(url_to_game, otherwise=list())
+pb <- progress_bar$new(format = " progress [:bar] :percent eta: :eta", total = nrow(games_to_get))
+games_to_get %>% 
+  mutate(match_info=map(match_url, ~url_to_game_possibly(.))) %>% 
+  unnest(match_info, .name_repair="minimal") %>%
+  select(-match_url, -date, -match1, -.name_repair, -league_url, -comp_id) -> mmm
+"done go"
+```
+
+look at results (now a function also)
+
+change partials to : (keep it to be safe, eg if match has been rescheduled later, and apparently complete score is only partial)        
+
+```{r}
+mmm %>% mutate(since=(retrieved-time_stamp)/dhours(1)) %>% 
+  mutate(score=ifelse(since<2.5, str_replace(score, "-", ":"), score)) %>%   
+  select(-since) -> mmm
+mmm %>% mutate(status=case_when(
+  str_detect(score, " - ") ~ "done",
+  str_detect(score, " : ") ~ "in progress",
+  TRUE                    ~ "scheduled"
+  )) %>%
+  arrange(status, time_stamp) %>% View("mmm")
+```
+
+
+
+combine with games
+
+```{r combine}
+games <- read_rds("rds/games.rds")
+games <- combine2(games, mmm)
+games %>% distinct(match, .keep_all = T) -> games
+saveRDS(games,"rds/games.rds")
+"done"
+```
+
+
+
+
+
+
+
+```{r}
+read_html(url) %>% html_nodes("a") %>% html_attr("href") %>% 
+  enframe() %>% filter(str_detect(value, "^/matches/")) %>%
+  extract(value, into="match", regex="/([0-9]+)/$", remove=F, convert=T) %>% 
+  drop_na(match) %>% 
+  distinct(match, .keep_all = T) %>% 
+  select(-name, match_url=value)
+```
+
+get match numbers for a league
+
+```{r}
+url <- l$league_url[17]
+url
+m <- league_url_to_match_numbers(url)
+m
+```
+
+(ii) get ones that are in games and due. This has nothing to do with what we just did.
+
+
+```{r}
+today <- as.Date("2020-02-08")
+games %>% filter(str_detect(score, " - ")) -> gs
+m %>% anti_join(gs, by="match") %>% 
+  mutate(match_url=str_c("http://www.soccerway.com", match_url)) -> games_to_get # I want to get future ones as well, or maybe not
+games_to_get
+```
+
+
+
+### temporary sample of a few
+
+```{r}
+games_to_get_all <- games_to_get
+games_to_get_all %>% sample_n(50) -> games_to_get
+```
+
+```{r}
+want <- c(53497, 53866)
+games_to_get %>% filter(comp_id %in% want) -> games_to_get
+```
+
+```{r}
+games_to_get
+```

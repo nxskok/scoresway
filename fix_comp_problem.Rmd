@@ -1,0 +1,73 @@
+
+## packages and prelim
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(rvest)
+library(conflicted)
+conflict_prefer("pluck", "purrr")
+conflict_prefer("filter", "dplyr") 
+source("functions.R")
+source("new_from_here.R")
+```
+
+## get games
+
+```{r}
+games <- read_rds("rds/games.rds")
+nrow(games)
+```
+
+```{r}
+games
+```
+
+problem is that comp is recent  but games are old
+
+this might need fixing directly:
+
+```{r}
+games %>% filter(comp==53268) %>%
+  arrange(desc(time_stamp))
+```
+
+l, m from elsewhere
+
+```{r}
+l %>% mutate(z=1) %>% View("l")
+View(m)
+```
+
+l is ok but m is not
+
+here is where m comes from (don't run yet)
+
+```{r}
+league_url_to_match_numbers_possibly <- possibly(league_url_to_match_numbers, otherwise=list())
+pb <- progress_bar$new(format = " progress [:bar] :percent eta: :eta", total = nrow(l))
+l %>% mutate(match_number=map(league_url, ~league_url_to_match_numbers_possibly(.))) %>% 
+  unnest(match_number) -> m
+m
+"m done"
+```
+
+so...
+
+```{r}
+url <- "https://www.soccerway.com/national/italy/serie-b/20192020/regular-season/r54637/"
+pb <- progress_bar$new(format = " progress [:bar] :percent eta: :eta", total = 1)
+league_url_to_match_numbers(url)
+```
+
+these are ok, so why are they wrong from before?
+
+I might be able to fix games that are in wrong league by looking up any game, then substituting the game number I want at the end (this may work)
+I need to return the correct comp number, by obtaining the league that the match was actually played in and substituting
+(or, get that as part of getting the match)
+
+```{r}
+a_match_url <- "https://int.soccerway.com/matches/2018/10/06/mexico/liga-premier-serie-b/potosino/deportivo-cafessa/2859833/"
+```
+
+idea: change the match number and leave the rest of it the same

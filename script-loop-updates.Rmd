@@ -1,0 +1,77 @@
+---
+title: "script-loop updates"
+output: html_notebook
+---
+
+## packages, and get old games
+
+```{r}
+library(tidyverse)
+games=readRDS("rds/games.rds")
+last_games=file.info("rds/games.rds")$ctime
+```
+
+set script options
+
+```{r}
+script_options=list(
+  sleep_hours=4,
+  frac_to_sample=1
+)
+saveRDS(script_options, "rds/soccerway_script_options.rds")
+```
+
+
+get soccerway-script-loop running as a job 
+
+then, every so often, get new games file and check for changes
+
+```{bash}
+ls -l rds/games.rds
+```
+
+```{r}
+now_games=file.info("rds/games.rds")$ctime
+now_games>last_games
+```
+
+## view latest games
+
+```{r}
+games_new=readRDS("rds/games.rds")
+games_new %>% 
+  anti_join(games, by=c("match", "score")) %>% 
+  select(country, comp_name, score) %>% 
+  mutate(is_score=ifelse(str_detect(score, " - "), "score", "sched")) %>% 
+  count(country, comp_name, is_score) %>% 
+  spread(is_score, n, fill=0) %>% 
+  View("Latest")
+games=games_new
+```
+
+games by day
+
+```{r}
+games %>% mutate(date=as.Date(time_stamp)) %>% 
+  mutate(got=ifelse(str_detect(score, " - "),"retrieved", "not retrieved")) %>% 
+  filter(date<=Sys.Date()) %>% 
+  count(date, got) %>% 
+  group_by(date) %>% 
+  mutate(pct=100*n/sum(n)) %>% 
+  select(-n) %>% 
+  spread(got, pct, fill=0) %>% 
+  arrange(desc(date))
+```
+
+reset last games
+
+```{r}
+last_games=file.info("rds/games.rds")$ctime
+```
+
+investigate games I have
+
+```{r}
+games %>% filter(str_detect(comp_name, "uefa-cup")) %>% arrange(desc(time_stamp))
+```
+

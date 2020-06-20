@@ -1,0 +1,11 @@
+--2019-04-28 22:01:55--  http://www.scoresway.com/?sport=soccer
+Resolving www.scoresway.com (www.scoresway.com)... 208.185.118.104, 208.185.118.98
+Connecting to www.scoresway.com (www.scoresway.com)|208.185.118.104|:80... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: unspecified [text/html]
+Saving to: ‘index.html?sport=soccer’
+
+index.html?sport=soccer                [<=>                                                            ]       0  --.-KB/s               index.html?sport=soccer                [ <=>                                                           ] 156.33K  --.-KB/s    in 0.1s    
+
+2019-04-28 22:01:56 (1.44 MB/s) - ‘index.html?sport=soccer’ saved [160087]
+
