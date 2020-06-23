@@ -61,6 +61,7 @@ games %>% filter(!str_detect(score, " - ")) %>% # there might be none of these
 m %>% inner_join(g, by="match") %>% 
   select(match, country, comp_name, t1_name, t2_name, score, time_stamp) %>% 
   arrange(time_stamp) %>% 
+  distinct(match, .keep_all = TRUE) %>% 
   View("future games")
   # filter((now()-time_stamp)/ddays(1)<7) %>% # drop off after a week
   # select(-time_stamp) -> games_to_get
