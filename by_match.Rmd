@@ -32,6 +32,8 @@ playoffs <- tribble(
   54165, "https://int.soccerway.com/national/austria/bundesliga/20192020/relegation-round/r54165/",
   54088, "https://int.soccerway.com/national/bulgaria/a-pfg/20192020/relegation-round/r54088/",
   54083, "https://int.soccerway.com/national/bulgaria/a-pfg/20192020/championship-round/r54083/",
+  54505, "https://int.soccerway.com/national/czech-republic/czech-liga/20192020/championship-round/r54505/",
+  54510, "https://int.soccerway.com/national/czech-republic/czech-liga/20192020/relegation-round/r54510/",
   54281, "https://int.soccerway.com/national/denmark/superliga/20192020/championship-round/r54281/",
   54286, "https://int.soccerway.com/national/denmark/superliga/20192020/relegation-round/r54286",
   53558, "https://int.soccerway.com/national/greece/super-league/20192020/championship-round/r53558/",
@@ -43,7 +45,7 @@ playoffs <- tribble(
   53770, "https://int.soccerway.com/national/slovakia/super-liga/20192020/championship-round/r53770/",
   53772, "https://int.soccerway.com/national/slovakia/super-liga/20192020/relegation-round/r53772/",
   54066, "https://int.soccerway.com/national/ukraine/premier-league/20192020/championship-round/r54066/",
-  54068, "https://int.soccerway.com/national/ukraine/premier-league/20192020/relegation-round/r54068/"
+  54068, "https://int.soccerway.com/national/ukraine/premier-league/20192020/relegation-round/r54068/",
 )
 playoffs
 ```
@@ -178,6 +180,7 @@ nrow(games_to_get)
 pb <- progress_bar$new(format = " progress [:bar] :percent eta: :eta", total = nrow(games_to_get))
 games <- new_combine(games_to_get, "re-gotten games")
 ```
+
 
 
 ## (v) tidy up extraneous cols 

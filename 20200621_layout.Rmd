@@ -1,0 +1,191 @@
+investigation of new soccerway game layout
+
+## packages
+
+```{r}
+library(tidyverse)
+library(rvest)
+```
+
+## play
+
+```{r}
+urls <- tribble(
+  ~note, ~url,
+  "postponed" , "https://int.soccerway.com/matches/2020/06/22/south-america/copa-america/australia/bolivia/3189349/",
+  "penalties" , "https://int.soccerway.com/matches/2020/06/20/lithuania/cup/utenis-utena/fk-atlantas/3277935/",
+  "normal"    , "https://int.soccerway.com/matches/2020/01/22/spain/copa-del-rey/ud-ibiza/futbol-club-barcelona/3208733/",
+  "cancelled" , "https://int.soccerway.com/matches/2020/05/09/france/ligue-1/stade-de-reims/amiens-sporting-club-football/3030898/",
+  "penalties" , "https://int.soccerway.com/matches/2020/01/04/france/coupe-de-france/sable-fc/pau-football-club/3190891/",
+  "not played", "https://int.soccerway.com/matches/2020/06/21/costa-rica/liga-de-ascenso/sporting-san-jose/ad-escazucena/3277921/",
+  "normal"    , "https://int.soccerway.com/matches/2020/06/22/england/premier-league/manchester-city-football-club/burnley-fc/3029367/",
+  "extra time", "https://int.soccerway.com/matches/2020/03/03/england/fa-cup/reading-fc/sheffield-united-fc/3221322/",
+  "extra time", "https://int.soccerway.com/matches/2020/06/22/england/league-two/exeter-city-fc/colchester-united-fc/3277183/",
+  "not played", "https://int.soccerway.com/matches/2020/07/03/england/championship/charlton-athletic-football-club/millwall-fc/3036534/"
+)
+urls
+```
+
+```{r}
+urls %>% 
+  mutate(html=map(url, ~read_html(.))) -> d
+d
+```
+
+
+
+
+xpaths
+
+```{r}
+xpaths <- c(
+  '//*[@id="page_match_1_block_match_info_5"]/div/div/div[2]/span', # postponed
+  '//*[@id="page_match_1_block_match_info_5"]/div/div/div[2]/h3/span[1]', # FT (with P)
+  '//*[@id="page_match_1_block_match_info_5"]/div/div/div[2]/h3/span[2]', # P on left
+  '//*[@id="page_match_1_block_match_info_5"]/div/div/div[2]/h3', # the whole score block
+  '//*[@id="page_match_1_block_match_info_5"]/div/div/div[2]' # hmm: it's all here, just needs finding
+)
+xpaths
+```
+
+```{r}
+get_text <- function(h, xp) {
+    h %>% html_nodes(xpath = xp) %>% html_text() %>% 
+    str_split("\n") %>% pluck(1) %>% str_trim()
+}
+get_score <- function(x) {
+  x %>% str_extract("^[0-9]+ - [0-9]+$") %>% na.omit() -> w
+  x %>% str_extract("^[0-9]+:[0-9]+$") %>% na.omit() -> k
+  case_when(
+    length(w) > 0 ~ w[1],
+    length(k) > 0 ~ k[1],
+    TRUE          ~ ""
+  )
+}
+
+```
+
+```{r}
+d %>% mutate(r=row_number()) %>% 
+  mutate(v = map(html, ~get_text(., xpaths[5]))) -> vv
+vv %>% unnest(v) %>% 
+  select(r, note, v)
+```
+
+```{r}
+vv %>% select(r, note, v) %>% 
+  mutate(is_postponed = map_lgl(v, ~any(str_detect(., "^Postponed$")))) %>% 
+  mutate(is_penalties = map_lgl(v, ~any(str_detect(., "^P$")))) %>% 
+  mutate(is_extra = map_lgl(v, ~any(str_detect(., "^E$")))) %>% 
+  mutate(score = map_chr(v, ~get_score(.))) %>% 
+  mutate(is_done = map_lgl(v, ~any(str_detect(., "FT|AET")))) %>% 
+  mutate(stat = case_when(
+    is_postponed ~ "P",
+    !is_done     ~ "",
+    is_penalties ~ "FT-Pen",
+    is_extra     ~ "FT-E",
+    TRUE         ~ "FT"
+  )) 
+```
+
+```{r}
+vv %>% pluck("v", 6) -> x
+x
+```
+
+
+
+```{r}
+any(str_detect(x, "^Postponed$"))
+str_extract(x, "^[0-9]+ - [0-9]+$") %>% na.omit()
+get_score(x)
+```
+
+
+notes
+
+postponed: item 5 is Postponed
+penalties: item 8 is score, 7 and 9 are P, 6 is FT. Or, 5 is AET, the rest back 1
+normal: item 8 is score, 6 is FT, 15 is half-time score
+cancelled: all blank (5 items)
+extra time: 5 is AET, 7 is score, 6 and 8 are E, 14 is full-time score
+not played yet (but scheduled): 2 is KO, 6 is ko time (eg 22:00), may be others like an agg
+
+## jottings
+
+```{r}
+url_to_game=function(url) {
+  
+  retrieved_time <- now()
+  read_html(url) -> the_match
+  Sys.sleep(0.5)
+  
+  # match number
+  
+  url %>% str_split("/") %>% pluck(1, 12) %>% as.numeric() -> match_number
+  
+  
+  # team names and score
+  
+  xpaths <- c('//*[@id="page_match_1_block_match_info_5"]/div/div/div[1]/a[2]', # home team
+              '//*[@id="page_match_1_block_match_info_5"]/div/div/div[3]/a[2]', # away tean
+              '//*[@id="page_match_1_block_match_info_5"]/div/div/div[2]/h3/span[1]', # match status
+              '//*[@id="page_match_1_block_match_info_5"]/div/div/div[2]/h3/text()', # score
+              '//*[@id="page_match_1_block_match_info_5"]/div/div/div[5]/a[2]', # league
+              '//*[@id="page_match_1_block_match_info_5"]/div/div/div[5]') # details, ko date and time
+  
+  the_match %>% html_nodes(xpath = xpaths[1]) %>% 
+    html_text() -> t1_name
+  the_match %>% html_nodes(xpath = xpaths[1]) %>% 
+    html_attr("href") %>% 
+    str_split("/") %>% pluck(1, 5) %>% as.numeric() -> t1_id
+  the_match %>% html_nodes(xpath = xpaths[2]) %>% 
+    html_text() -> t2_name
+  the_match %>% html_nodes(xpath = xpaths[2]) %>% 
+    html_attr("href") %>% 
+    str_split("/") %>% pluck(1, 5) %>% as.numeric() -> t2_id
+  
+  the_match %>% html_nodes(xpath=xpaths[3]) %>% html_text() -> status
+  
+  the_match %>% html_nodes(xpath=xpaths[4]) %>% html_text() %>% 
+    pluck(2) %>% str_remove_all("\n") %>% 
+    str_trim() -> score
+  
+  the_match %>% html_nodes(xpath=xpaths[5]) %>% 
+    html_text() -> league_name
+  
+  the_match %>% html_nodes(xpath=xpaths[5]) %>% 
+    html_attr("href") %>% 
+    str_split("/") -> comp_info
+  
+  comp_info %>% pluck(1, 7) %>% 
+    str_remove("r") %>% as.numeric() -> league_number
+  
+  comp_info %>% pluck(1, 3) -> country
+  
+  the_match %>% html_nodes(xpath=xpaths[6]) %>% 
+    html_nodes("span") %>% html_attr("data-value") %>% 
+    enframe() %>% filter(!is.na(value)) %>% pull() %>% as.numeric() %>% 
+    as_datetime(tz="America/Toronto") -> kickoff
+  
+  pb$tick()
+  
+  # tibble
+  
+  tibble(match=match_number,
+         t1=t1_id,
+         t2=t2_id,
+         comp=league_number,
+         country=country,
+         t1_name=t1_name,
+         t2_name=t2_name,
+         score=score,
+         comp_name=league_name,
+         time_stamp=kickoff,
+         retrieved=retrieved_time,
+         stat=status
+  )
+}
+
+```
+
