@@ -31,8 +31,8 @@ this doesn't seem to get the ones like 2:1
 base="http://www.soccerway.com"
 get_postponed <- "n"
 games %>% filter(!str_detect(score, " - ")) %>% # there might be none of these
-  filter(!str_detect(score, "Cancelled")) %>% 
-  filter(!str_detect(score, "Postponed") | get_postponed=="y")  -> g 
+  filter(!str_detect(stat, "C")) %>% 
+  filter(!str_detect(stat, "P") | get_postponed=="y")  -> g 
 m %>% inner_join(g, by="match") %>% 
   select(league_url, match_url, date, match, time_stamp) %>% 
   mutate(match_url=str_c(base, match_url)) %>% 
@@ -70,3 +70,19 @@ m %>% inner_join(g, by="match") %>%
 # pb <- progress_bar$new(format = " progress [:bar] :percent eta: :eta", total = nrow(games_to_get))
 # games <- new_combine(games_to_get, "future games")
 ```
+
+
+## (xx) make stat column (this is a one-off)
+
+```{r}
+games %>% mutate(stat=case_when(
+  str_detect(score, " - ") ~ "FT",
+  str_detect(score, ":")   ~ "Sched",
+  str_detect(score, "Can") ~ "C",
+  str_detect(score, "Post") ~ "P",
+  TRUE                      ~ ""
+)) -> g0
+saveRDS(g0,"rds/games.rds")
+g0  
+```
+

@@ -32,8 +32,10 @@ playoffs <- tribble(
   54165, "https://int.soccerway.com/national/austria/bundesliga/20192020/relegation-round/r54165/",
   54088, "https://int.soccerway.com/national/bulgaria/a-pfg/20192020/relegation-round/r54088/",
   54083, "https://int.soccerway.com/national/bulgaria/a-pfg/20192020/championship-round/r54083/",
-  54505, "https://int.soccerway.com/national/czech-republic/czech-liga/20192020/championship-round/r54505/",
-  54510, "https://int.soccerway.com/national/czech-republic/czech-liga/20192020/relegation-round/r54510/",
+  54505, "https://uk.soccerway.com/national/czech-republic/czech-liga/20192020/championship-round/r54505/",
+  54506, "https://uk.soccerway.com/national/czech-republic/czech-liga/20192020/europa-league-play-offs---1st-round/r54506/",
+  54507, "https://uk.soccerway.com/national/czech-republic/czech-liga/20192020/europa-league-play-offs---2nd-round/r54507/",
+  54510, "https://uk.soccerway.com/national/czech-republic/czech-liga/20192020/relegation-round/r54510/",
   54281, "https://int.soccerway.com/national/denmark/superliga/20192020/championship-round/r54281/",
   54286, "https://int.soccerway.com/national/denmark/superliga/20192020/relegation-round/r54286",
   53558, "https://int.soccerway.com/national/greece/super-league/20192020/championship-round/r53558/",
@@ -45,7 +47,7 @@ playoffs <- tribble(
   53770, "https://int.soccerway.com/national/slovakia/super-liga/20192020/championship-round/r53770/",
   53772, "https://int.soccerway.com/national/slovakia/super-liga/20192020/relegation-round/r53772/",
   54066, "https://int.soccerway.com/national/ukraine/premier-league/20192020/championship-round/r54066/",
-  54068, "https://int.soccerway.com/national/ukraine/premier-league/20192020/relegation-round/r54068/",
+  54068, "https://int.soccerway.com/national/ukraine/premier-league/20192020/relegation-round/r54068/"
 )
 playoffs
 ```
@@ -130,8 +132,8 @@ this doesn't seem to get the ones like 2:1
 base="http://www.soccerway.com"
 get_postponed <- "y"
 games %>% filter(!str_detect(score, " - ")) %>% # there might be none of these
-  filter(!str_detect(score, "Cancelled")) %>% 
-  filter(!str_detect(score, "Postponed") | get_postponed=="y")  -> g 
+  filter(!str_detect(stat, "C")) %>% 
+  filter(!str_detect(stat, "P") | get_postponed=="y")  -> g 
 m %>% inner_join(g, by="match") %>% 
   select(league_url, match_url, date, match, time_stamp) %>% 
   mutate(match_url=str_c(base, match_url)) %>% 
@@ -169,18 +171,17 @@ m %>% inner_join(g, by="match") %>%
 
 ```{r}
 base="http://www.soccerway.com"
-games %>% filter(stat!="FT") %>% 
-  filter(str_detect(score, " - ")) -> g
+games %>% filter(str_detect(stat,"FT")) %>% 
+  filter(str_detect(score, ":")) -> g
 g
 m %>% inner_join(g, by="match") %>% 
   select(league_url, match_url, date, match, time_stamp) %>% 
   mutate(match_url=str_c(base, match_url)) %>% 
   select(-time_stamp) -> games_to_get
 nrow(games_to_get)
-pb <- progress_bar$new(format = " progress [:bar] :percent eta: :eta", total = nrow(games_to_get))
+pb <- progress_bar$new(format = " progress [:bar] :percent eta: :eta", total = nrow(games_to_get), width = 50)
 games <- new_combine(games_to_get, "re-gotten games")
 ```
-
 
 
 ## (v) tidy up extraneous cols 

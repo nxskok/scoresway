@@ -21,7 +21,11 @@ urls <- tribble(
   "normal"    , "https://int.soccerway.com/matches/2020/06/22/england/premier-league/manchester-city-football-club/burnley-fc/3029367/",
   "extra time", "https://int.soccerway.com/matches/2020/03/03/england/fa-cup/reading-fc/sheffield-united-fc/3221322/",
   "extra time", "https://int.soccerway.com/matches/2020/06/22/england/league-two/exeter-city-fc/colchester-united-fc/3277183/",
-  "not played", "https://int.soccerway.com/matches/2020/07/03/england/championship/charlton-athletic-football-club/millwall-fc/3036534/"
+  "not played", "https://int.soccerway.com/matches/2020/07/03/england/championship/charlton-athletic-football-club/millwall-fc/3036534/",
+  "extra time", "https://uk.soccerway.com/matches/2020/06/22/england/league-two/exeter-city-fc/colchester-united-fc/3277183/",
+  "pens dt", "https://uk.soccerway.com/matches/2020/06/23/uzbekistan/cup/turan/shortan-guzor/3279484/",
+  "penalties", "https://uk.soccerway.com/matches/2020/06/24/finland/suomen-cup/football-club-inter-turku/kuopion-palloseuraoy/3270030/",
+  "postponed", "https://uk.soccerway.com/matches/2020/06/27/australia/tasmania/clarence-zebras/devonport-city/3195212/"
 )
 urls
 ```
@@ -35,17 +39,11 @@ d
 
 
 
-xpaths
+xpath
 
 ```{r}
-xpaths <- c(
-  '//*[@id="page_match_1_block_match_info_5"]/div/div/div[2]/span', # postponed
-  '//*[@id="page_match_1_block_match_info_5"]/div/div/div[2]/h3/span[1]', # FT (with P)
-  '//*[@id="page_match_1_block_match_info_5"]/div/div/div[2]/h3/span[2]', # P on left
-  '//*[@id="page_match_1_block_match_info_5"]/div/div/div[2]/h3', # the whole score block
-  '//*[@id="page_match_1_block_match_info_5"]/div/div/div[2]' # hmm: it's all here, just needs finding
-)
-xpaths
+xpath <-   '//*[@id="page_match_1_block_match_info_5"]/div/div/div[2]' # hmm: it's all here, just needs finding
+xpath
 ```
 
 ```{r}
@@ -67,7 +65,7 @@ get_score <- function(x) {
 
 ```{r}
 d %>% mutate(r=row_number()) %>% 
-  mutate(v = map(html, ~get_text(., xpaths[5]))) -> vv
+  mutate(v = map(html, ~get_text(., xpath))) -> vv
 vv %>% unnest(v) %>% 
   select(r, note, v)
 ```
@@ -85,33 +83,39 @@ vv %>% select(r, note, v) %>%
     is_penalties ~ "FT-Pen",
     is_extra     ~ "FT-E",
     TRUE         ~ "FT"
-  )) 
+  )) %>% View()
 ```
+
+now do it one at a time
+
+
+
+
+## try it
 
 ```{r}
-vv %>% pluck("v", 6) -> x
-x
+source("functions.R")
+pb <- progress_bar$new(format = "pr [:bar] :percent eta: :eta", total = 1, width = 50)
+url_to_game(urls$url[2])
+pb <- progress_bar$new(format = "pr [:bar] :percent eta: :eta", total = nrow(urls), width = 50)
+urls %>% mutate(ans=map(url, ~url_to_game(.))) -> d
+d %>% select(note, ans) %>% unnest(ans)
 ```
 
 
-
-```{r}
-any(str_detect(x, "^Postponed$"))
-str_extract(x, "^[0-9]+ - [0-9]+$") %>% na.omit()
-get_score(x)
-```
-
-
-notes
-
-postponed: item 5 is Postponed
-penalties: item 8 is score, 7 and 9 are P, 6 is FT. Or, 5 is AET, the rest back 1
-normal: item 8 is score, 6 is FT, 15 is half-time score
-cancelled: all blank (5 items)
-extra time: 5 is AET, 7 is score, 6 and 8 are E, 14 is full-time score
-not played yet (but scheduled): 2 is KO, 6 is ko time (eg 22:00), may be others like an agg
 
 ## jottings
+
+```{r}
+xpaths <- c(
+  '//*[@id="page_match_1_block_match_info_5"]/div/div/div[2]/span', # postponed
+  '//*[@id="page_match_1_block_match_info_5"]/div/div/div[2]/h3/span[1]', # FT (with P)
+  '//*[@id="page_match_1_block_match_info_5"]/div/div/div[2]/h3/span[2]', # P on left
+  '//*[@id="page_match_1_block_match_info_5"]/div/div/div[2]/h3', # the whole score block
+  '//*[@id="page_match_1_block_match_info_5"]/div/div/div[2]' # hmm: it's all here, just needs finding
+)
+xpaths
+```
 
 ```{r}
 url_to_game=function(url) {
@@ -188,4 +192,3 @@ url_to_game=function(url) {
 }
 
 ```
-

@@ -397,6 +397,23 @@ league_url_to_game_urls <- function(league_url) {
     rename(game_url=value)
 }
 
+# aux functions for below
+
+get_text <- function(h, xp) {
+  h %>% html_nodes(xpath = xp) %>% html_text() %>% 
+    str_split("\n") %>% pluck(1) %>% str_trim()
+}
+get_score <- function(x) {
+  x %>% str_extract("^[0-9]+ - [0-9]+$") %>% na.omit() -> w
+  x %>% str_extract("^[0-9]+:[0-9]+$") %>% na.omit() -> k
+  case_when(
+    length(w) > 0 ~ w[1],
+    length(k) > 0 ~ k[1],
+    TRUE          ~ ""
+  )
+}
+
+
 # get game info from a (full) game url
 
 url_to_game=function(url) {
@@ -417,7 +434,8 @@ url_to_game=function(url) {
               '//*[@id="page_match_1_block_match_info_5"]/div/div/div[2]/h3/span[1]', # match status
               '//*[@id="page_match_1_block_match_info_5"]/div/div/div[2]/h3/text()', # score
               '//*[@id="page_match_1_block_match_info_5"]/div/div/div[5]/a[2]', # league
-              '//*[@id="page_match_1_block_match_info_5"]/div/div/div[5]') # details, ko date and time
+              '//*[@id="page_match_1_block_match_info_5"]/div/div/div[5]', # details, ko date and time
+              '//*[@id="page_match_1_block_match_info_5"]/div/div/div[2]') # score, match status etc (use instead of 3 and 4)
   
   the_match %>% html_nodes(xpath = xpaths[1]) %>% 
     html_text() -> t1_name
@@ -429,12 +447,30 @@ url_to_game=function(url) {
   the_match %>% html_nodes(xpath = xpaths[2]) %>% 
     html_attr("href") %>% 
     str_split("/") %>% pluck(1, 5) %>% as.numeric() -> t2_id
+
+  text <- get_text(the_match, xpaths[7])
+
+  # get status from text
   
-  the_match %>% html_nodes(xpath=xpaths[3]) %>% html_text() -> status
-  
-  the_match %>% html_nodes(xpath=xpaths[4]) %>% html_text() %>% 
-    pluck(2) %>% str_remove_all("\n") %>% 
-    str_trim() -> score
+  is_postponed <-  any(str_detect(text, "^Postponed$")) 
+  is_penalties <- any(str_detect(text, "^P$"))
+  is_extra <- any(str_detect(text, "^E$"))
+  score <- get_score(text)
+  is_done <- any(str_detect(text, "FT|AET"))
+  status <- case_when(
+      is_postponed ~ "P",
+      !is_done     ~ "",
+      is_penalties ~ "FT-Pen",
+      is_extra     ~ "FT-E",
+      TRUE         ~ "FT"
+    )
+    
+  # old  
+  # the_match %>% html_nodes(xpath=xpaths[3]) %>% html_text() -> status
+  # 
+  # the_match %>% html_nodes(xpath=xpaths[4]) %>% html_text() %>% 
+  #   pluck(2) %>% str_remove_all("\n") %>% 
+  #   str_trim() -> score
   
   the_match %>% html_nodes(xpath=xpaths[5]) %>% 
     html_text() -> league_name
